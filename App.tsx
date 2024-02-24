@@ -1,118 +1,84 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
-
-import React from 'react';
-import type {PropsWithChildren} from 'react';
-import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from 'react-native';
-
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
-
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
-
-function Section({children, title}: SectionProps): JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
+import { NavigationContainer } from '@react-navigation/native';
+import React, { useEffect, useMemo } from 'react';
+import SplashScreen from 'react-native-splash-screen';
+import { MyContextProvider, useAuthContext } from './src/authContext/AuthContext';
+import AuthGuard from './src/guards/AuthGuard';
+import AppRouter from './src/routes/AppRouter';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import messaging from '@react-native-firebase/messaging';
+import notifee from "@notifee/react-native";
+import { onDisplayNotification } from './src/NotificationManager';
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+import * as RNLocalize from 'react-native-localize';
+import en from './src/assets/locales/en.json';
+import hi from './src/assets/locales/hi.json';
+import mr from './src/assets/locales/mr.json';
 
 function App(): JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+  const { state }: any = useAuthContext();
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+  useEffect(() => {
+    onAppBootstrap()
+    setTimeout(() => SplashScreen.hide(), 1000)
+    messaging().onMessage(onMessageReceived);
+  }, []);
+
+  const onAppBootstrap = async () => {
+    const permission = await notifee.requestPermission();
+    if (permission) {
+      if (Platform.OS == "android") {
+        await messaging().registerDeviceForRemoteMessages();
+      }
+      const token = await messaging().getToken();
+      await AsyncStorage.setItem('token', token);
+    }
+  }
+
+  const onMessageReceived = (message: any) => {
+    onDisplayNotification(message);
+  }
+  const resources = {
+    en: { translation: en },
+    hi: { translation: hi },
+    mr: { translation: mr },
   };
 
+  const languageDetector: any = {
+    type: 'languageDetector',
+    async: true,
+    detect: (cb: (language: string) => void) => {
+      cb(state?.selectedLanguage || RNLocalize.getLocales()[0].languageCode);
+    },
+    init: () => { },
+    cacheUserLanguage: () => { },
+  };
+
+  useMemo(() =>
+    i18n
+      .use(initReactI18next)
+      .use(languageDetector)
+      .init({
+        resources,
+        compatibilityJSON: 'v3',
+        fallbackLng: 'en', // Fallback language
+        interpolation: {
+          escapeValue: false, // React already escapes values
+        },
+      })
+    , [state?.selectedLanguage])
+
   return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
-      />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:erwer
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+    <NavigationContainer>
+      <AuthGuard>
+        <AppRouter />
+      </AuthGuard>
+    </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-  },
-  highlight: {
-    fontWeight: '700',
-  },
-});
-
-export default App;
+export default () => (
+  <MyContextProvider>
+    <App />
+  </MyContextProvider>
+);
